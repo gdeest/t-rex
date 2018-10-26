@@ -11,7 +11,7 @@ module Text.Regex.Safe where
 import Data.Array (Array, (!))
 import Data.Maybe(fromJust)
 import Data.Proxy (Proxy(..))
-import Data.String(IsString)
+import Data.String(IsString(..))
 import Text.Regex.Base
 
 import qualified Text.Regex.TDFA.String as Str
@@ -26,6 +26,9 @@ data RE s r where
   Alt :: RE s a -> RE s b -> RE s (Either a b)
   Opt :: RE s a -> RE s (Maybe a)
   Rep :: RE s a -> RE s [a]
+
+instance IsString s => IsString (RE s s) where
+  fromString = Str . fromString
 
 instance Functor (RE s) where
   fmap = Map
@@ -76,7 +79,7 @@ compileRE pc pe r str = -- trace str $
       snd . getContent 1 r <$> result
   where
     getContent
-      :: forall r. Int -- Num of capture groups before
+      :: forall r. Int -- Num of capture groups before / next group
       -> RE s r
       -> (MatchText s)
       -> (Int, r)
@@ -84,8 +87,8 @@ compileRE pc pe r str = -- trace str $
       Eps -> (i, ())
       App ra rb ->
         let (i', retA) = getContent (i+1) ra ms
-            (i'', retB) = getContent i' rb ms in
-          (i''+1, retA retB)
+            (i'', retB) = getContent (i'+1) rb ms in
+          (i'', retA retB)
       Str _ -> (i+1, fst (ms ! i))
       Map f r ->
         let (i', ret) = getContent (i+1) r ms in (i', f ret)
@@ -102,31 +105,50 @@ compileRE pc pe r str = -- trace str $
             (ng1, ng2) = (nGroups ra, nGroups rb) in
         case (matched1, matched2) of
           ("", _) -> (i+3+ng1+ng2, Right content2)
-          -- XXX: Invariant: at least one matches if we get here !
+          -- Invariant: at least one matches if we get here !
           _ -> (i+4+ng1+ng2, Left content1)
 
       Rep r ->
-        let r' = (,) <$> r <*> (Rep r)
+        let r' = r <&> (Rep r)
             ng = nGroups r + 2
             (matchedStr, _) = ms ! i in
         case matchedStr of
           "" -> (i+ng, [])
           s ->
-            let (x, xs) = fromJust $ compileRE pc pe r' s in
+            -- Invariant: this is necessarily a match.
+            let (x, xs) =
+                  case compileRE pc pe r' s of
+                    Just ret -> ret
+                    Nothing ->
+                      error $ "Can't parse " <> show matchedStr <> " with: " <> (show (regexStr r'))
+            in
               (i+ng, x:xs)
 
 nGroups :: RE s x -> Int
 nGroups re = case re of
+  Eps -> 0
   Str _ -> 1
   Alt r1 r2 -> 3 + nGroups r1 + nGroups r2
   Opt r -> nGroups r + 1
   App r1 r2 -> 2 + nGroups r1 + nGroups r2
   Rep r -> nGroups r + 2
-  Map _ r -> nGroups r
+  Map _ r -> nGroups r + 1
 
-digit :: RE String Int
-digit = Map (read @Int) (Str "-?[0-9]+")
+int :: RE String Int
+int = Map (read @Int) (Str "-?[0-9]+")
 
 infixl <&>
 (<&>) :: RE s a -> RE s b -> RE s (a, b)
 ra <&> rb = (,) <$> ra <*> rb
+
+many :: RE s a -> RE s [a]
+many = Rep
+
+many1 :: RE s a -> RE s [a]
+many1 re = (:) <$> re <*> many re
+
+sepBy :: RE s a -> RE s b -> RE s [a]
+sepBy ra rs = (:) <$> ra <*> many (rs *> ra)
+
+opt :: RE s a -> RE s (Maybe a)
+opt = Opt

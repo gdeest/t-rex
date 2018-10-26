@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 import Test.Hspec
 
 import Text.Regex.Safe
@@ -5,29 +6,74 @@ import Text.Regex.Safe
 main :: IO ()
 main = hspec $ do
   it "returns Nothing on failure" $ do
-    compile (Str "b") "a" `shouldBe` Nothing
+    let re = "b" :: RE String String
+    compile re "a" `shouldBe` Nothing
 
   it "captures optional patterns as Maybes" $ do
-    let re = compile $ Opt (Str "a")
-    re "a" `shouldBe` Just (Just "a")
-    re "" `shouldBe` Just Nothing
+    let re = opt "a" :: RE String (Maybe String)
+        match = compile re
+    match "a" `shouldBe` Just (Just "a")
+    match "" `shouldBe` Just Nothing
 
   it "captures alternative patterns as Either" $ do
-    let re = compile $ Alt (Str "a") (Str "b")
-    re "a" `shouldBe` Just (Left "a")
-    re "b" `shouldBe` Just (Right "b")
+    let re = Alt "a" "b"
+               :: RE String (Either String String)
+        match = compile re
+    match "a" `shouldBe` Just (Left "a")
+    match "b" `shouldBe` Just (Right "b")
 
   it "captures sequences as pairs" $ do
-    let re = compile $ (Str "a") <&> (Str "b")
-    re "ab" `shouldBe` Just ("a", "b")
+    let re = "a" <&> "b" :: RE String (String, String)
+        match = compile re
+    match "ab" `shouldBe` Just ("a", "b")
 
   it "captures repetitions as lists" $ do
-    let re = compile $ Rep (Str "a")
-    re "aaaa" `shouldBe` Just ["a", "a", "a", "a"]
+    let re = many "a" :: RE String [String]
+        match = compile re
+    match "aaaa" `shouldBe` Just ["a", "a", "a", "a"]
 
-  it "gracefully handles nested patterns" $ do
-    let re = compile $ Alt (Rep ((Str "a") <&> (Opt (Str "b")))) (Str "c")
-        ab = ("a", Just "b")
-        a = ("a", Nothing)
-    re "abaaab" `shouldBe` Just (Left [ab, a, a, ab])
-    re "c" `shouldBe` Just (Right "c")
+  -- it "gracefully handles nested patterns" $ do
+  --   let re = Alt (many ("a" <&> opt "b")) "c"
+  --              :: RE String (Either [(String, Maybe String)] String)
+  --       match = compile re
+  --       ab = ("a", Just "b")
+  --       a = ("a", Nothing)
+  --   match "abaaab" `shouldBe` Just (Left [ab, a, a, ab])
+  --   match "c" `shouldBe` Just (Right "c")
+
+  it "discards prefixes with *>" $ do
+    let re = many (Str "a") *> many (Str "v") :: RE String [String]
+        match = compile re
+        re' = Str "aaaa" *> (Map id $ Str "v+") :: RE String String
+        match' = compile re'
+    match "aaaavvvv" `shouldBe` Just ["v", "v", "v", "v"]
+    match' "aaaavvvv" `shouldBe` Just "vvvv"
+
+
+  it "parses separated lists" $ do
+    let re = sepBy (Str "a") (Str ",") :: RE String [String]
+        re' = Str "c" <&> re
+        match = compile re
+        match' = compile re'
+    match "a,a,a,a" `shouldBe` Just ["a", "a", "a", "a"]
+    match' "ca,a,a,a" `shouldBe` Just ("c", ["a", "a", "a", "a"])
+
+  it "parses integers" $ do
+    let match = compile int
+    match "-123" `shouldBe` Just (-123)
+    match "567" `shouldBe` Just 567
+    match "5aa" `shouldBe` Nothing
+
+  it "parses lists of integers" $ do
+    let match = compile (int `sepBy` Str ",")
+    match "-123" `shouldBe` Just [-123]
+    match "567" `shouldBe` Just [567]
+    match "567,123" `shouldBe` Just [567,123]
+    match "-342,78" `shouldBe` Just [-342,78]
+    match "5aa" `shouldBe` Nothing
+
+  it "parses lists of integers" $ do
+    let re :: RE String [Int]
+        re = (Str "Sum these: ") *> (int `sepBy` (Str ",")) :: RE String [Int]
+        match = compile re
+    match "Sum these: 1" `shouldBe` Just [1]
