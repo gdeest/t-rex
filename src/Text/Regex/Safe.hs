@@ -45,7 +45,7 @@ regexStr re = case re of
   Opt ra -> "(" <> regexStr ra <> ")?"
   App ra rb -> "(" <> regexStr ra <> ")" <> "(" <> regexStr rb <> ")"
   Rep ra -> "((" <> regexStr ra <> ")*)"
-  Map _ ra -> "(" <> regexStr ra <> ")"
+  Map _ ra -> regexStr ra
 
 mkFullRegex :: (IsString s, Monoid s) => RE s r -> s
 mkFullRegex re = "^" <> regexStr re <> "$"
@@ -91,7 +91,7 @@ compileRE pc pe r str = -- trace str $
           (i'', retA retB)
       Str _ -> (i+1, fst (ms ! i))
       Map f r ->
-        let (i', ret) = getContent (i+1) r ms in (i', f ret)
+        let (i', ret) = getContent i r ms in (i', f ret)
       Opt r ->
         let (matchedStr, _) = ms ! i in
           case matchedStr of
@@ -133,7 +133,7 @@ nGroups re = case re of
   Opt r -> nGroups r + 1
   App r1 r2 -> 2 + nGroups r1 + nGroups r2
   Rep r -> nGroups r + 2
-  Map _ r -> nGroups r + 1
+  Map _ r -> nGroups r
 
 int :: RE String Int
 int = Map (read @Int) (Str "-?[0-9]+")
