@@ -21,6 +21,7 @@ library
                      , bytestring
                      , regex-base
                      , regex-tdfa
+                     , semigroupoids
   default-language:    Haskell2010
 
 test-suite test

@@ -9,6 +9,7 @@
 module Text.Regex.Safe where
 
 import Data.Array (Array, (!))
+import Data.Functor.Alt
 import Data.Maybe(fromJust)
 import Data.Proxy (Proxy(..))
 import Data.String(IsString(..))
@@ -36,6 +37,11 @@ instance Functor (RE s) where
 instance Applicative (RE s) where
   pure x = Map (const x) Eps
   (<*>) = App
+
+instance Alt (RE s) where
+  (<!>) r1 r2 = (either id id) <$> (Alt r1 r2)
+  many = Rep
+  some r = (:) <$> r <*> many r
 
 regexStr :: (IsString s, Monoid s) => RE s r -> s
 regexStr re = case re of
@@ -144,11 +150,9 @@ infixl <&>
 (<&>) :: RE s a -> RE s b -> RE s (a, b)
 ra <&> rb = (,) <$> ra <*> rb
 
-many :: RE s a -> RE s [a]
-many = Rep
-
+-- | This is a somewhat more explicit alias to 'some'.
 many1 :: RE s a -> RE s [a]
-many1 re = (:) <$> re <*> many re
+many1 = some
 
 sepBy :: RE s a -> RE s b -> RE s [a]
 sepBy ra rs = (:) <$> ra <*> many (rs *> ra)
