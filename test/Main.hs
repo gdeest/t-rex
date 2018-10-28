@@ -32,14 +32,14 @@ main = hspec $ do
         match = compile re
     match "aaaa" `shouldBe` Just ["a", "a", "a", "a"]
 
-  -- it "gracefully handles nested patterns" $ do
-  --   let re = Alt (many ("a" <&> opt "b")) "c"
-  --              :: RE String (Either [(String, Maybe String)] String)
-  --       match = compile re
-  --       ab = ("a", Just "b")
-  --       a = ("a", Nothing)
-  --   match "abaaab" `shouldBe` Just (Left [ab, a, a, ab])
-  --   match "c" `shouldBe` Just (Right "c")
+  it "gracefully handles nested patterns" $ do
+    let re = Alt (many ("a" <&> opt "b")) "c"
+               :: RE String (Either [(String, Maybe String)] String)
+        match = compile re
+        ab = ("a", Just "b")
+        a = ("a", Nothing)
+    match "abaaab" `shouldBe` Just (Left [ab, a, a, ab])
+    match "c" `shouldBe` Just (Right "c")
 
   it "discards prefixes with *>" $ do
     let re = many (Str "a") *> many (Str "v") :: RE String [String]
@@ -48,7 +48,6 @@ main = hspec $ do
         match' = compile re'
     match "aaaavvvv" `shouldBe` Just ["v", "v", "v", "v"]
     match' "aaaavvvv" `shouldBe` Just "vvvv"
-
 
   it "parses separated lists" $ do
     let re = sepBy (Str "a") (Str ",") :: RE String [String]
@@ -64,7 +63,7 @@ main = hspec $ do
     match "567" `shouldBe` Just 567
     match "5aa" `shouldBe` Nothing
 
-  it "parses lists of integers" $ do
+  it "parses separated lists" $ do
     let match = compile (int `sepBy` Str ",")
     match "-123" `shouldBe` Just [-123]
     match "567" `shouldBe` Just [567]
@@ -72,8 +71,10 @@ main = hspec $ do
     match "-342,78" `shouldBe` Just [-342,78]
     match "5aa" `shouldBe` Nothing
 
-  it "parses lists of integers" $ do
-    let re :: RE String [Int]
-        re = (Str "Sum these: ") *> (int `sepBy` (Str ",")) :: RE String [Int]
+  it "computes sums" $ do
+    let re :: RE String Int
+        re =
+          fmap sum $
+          Str "Compute the sum of: " *> int `sepBy` Str ","
         match = compile re
-    match "Sum these: 1" `shouldBe` Just [1]
+    match "Compute the sum of: 1,-123,58" `shouldBe` Just (-64)

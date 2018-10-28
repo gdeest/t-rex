@@ -81,7 +81,7 @@ compileRE pc pe r str = -- trace str $
     getContent
       :: forall r. Int -- Num of capture groups before / next group
       -> RE s r
-      -> (MatchText s)
+      -> MatchText s
       -> (Int, r)
     getContent i r ms = case r of
       Eps -> (i, ())
@@ -120,7 +120,8 @@ compileRE pc pe r str = -- trace str $
                   case compileRE pc pe r' s of
                     Just ret -> ret
                     Nothing ->
-                      error $ "Can't parse " <> show matchedStr <> " with: " <> (show (regexStr r'))
+                      error $ "Invariant violation: can't parse " <>
+                        show matchedStr <> " with: " <> show (regexStr r')
             in
               (i+ng, x:xs)
 
