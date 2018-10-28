@@ -6,7 +6,18 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Text.Regex.Safe where
+module Text.Regex.Safe
+  ( RegexBackend(..)
+  , CompiledRE
+  , RE
+  , module Data.Functor.Alt
+  , int
+  , (<&>), (</>)
+  , sepBy
+  , many1
+  , opt
+  , raw
+  ) where
 
 import Data.Array (Array, (!))
 import Data.Functor.Alt
@@ -23,13 +34,13 @@ data RE s r where
   Eps :: RE s ()
   Map :: (a -> b) -> RE s a -> RE s b
   App :: RE s (a -> b) -> RE s a -> RE s b
-  Str :: s -> RE s s
+  Raw :: s -> RE s s
   Alt :: RE s a -> RE s b -> RE s (Either a b)
   Opt :: RE s a -> RE s (Maybe a)
   Rep :: RE s a -> RE s [a]
 
 instance IsString s => IsString (RE s s) where
-  fromString = Str . fromString
+  fromString = Raw . fromString
 
 instance Functor (RE s) where
   fmap = Map
@@ -46,7 +57,7 @@ instance Alt (RE s) where
 regexStr :: (IsString s, Monoid s) => RE s r -> s
 regexStr re = case re of
   Eps -> mempty
-  Str s -> "(" <> s <> ")"
+  Raw s -> "(" <> s <> ")"
   -- The enclosing group could be made non-capturing. Unfortunately, this isn't
   -- supported by regex-tdfa.
   Alt ra rb -> "((" <> regexStr ra <> ")|(" <> regexStr rb <> "))"
@@ -97,7 +108,7 @@ compileRE pc pe r str = -- trace str $
         let (i', retA) = getContent i ra ms
             (i'', retB) = getContent i' rb ms in
           (i'', retA retB)
-      Str _ -> (i+1, fst (ms ! i))
+      Raw _ -> (i+1, fst (ms ! i))
       Map f r ->
         let (i', ret) = getContent i r ms in (i', f ret)
       Opt r ->
@@ -136,7 +147,7 @@ compileRE pc pe r str = -- trace str $
 nGroups :: RE s x -> Int
 nGroups re = case re of
   Eps -> 0
-  Str _ -> 1
+  Raw _ -> 1
   Alt r1 r2 -> 3 + nGroups r1 + nGroups r2
   Opt r -> nGroups r + 1
   App r1 r2 -> nGroups r1 + nGroups r2
@@ -144,13 +155,17 @@ nGroups re = case re of
   Map _ r -> nGroups r
 
 int :: RE String Int
-int = Map (read @Int) (Str "-?[0-9]+")
+int = Map (read @Int) (Raw "-?[0-9]+")
 
 infixl <&>
 (<&>) :: RE s a -> RE s b -> RE s (a, b)
 ra <&> rb = (,) <$> ra <*> rb
 
--- | This is a somewhat more explicit alias to 'some'.
+infixl </>
+(</>) :: RE s a -> RE s b -> RE s (Either a b)
+(</>) = Alt
+
+-- | One or more. This is a somewhat more explicit alias to 'some'.
 many1 :: RE s a -> RE s [a]
 many1 = some
 
@@ -159,3 +174,7 @@ sepBy ra rs = (:) <$> ra <*> many (rs *> ra)
 
 opt :: RE s a -> RE s (Maybe a)
 opt = Opt
+
+raw :: s -> RE s s
+raw = Raw
+
