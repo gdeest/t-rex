@@ -41,6 +41,8 @@ regexStr :: (IsString s, Monoid s) => RE s r -> s
 regexStr re = case re of
   Eps -> mempty
   Str s -> "(" <> s <> ")"
+  -- The enclosing group could be made non-capturing. Unfortunately, this isn't
+  -- supported by regex-tdfa.
   Alt ra rb -> "((" <> regexStr ra <> ")|(" <> regexStr rb <> "))"
   Opt ra -> "(" <> regexStr ra <> ")?"
   App ra rb -> regexStr ra <> regexStr rb
