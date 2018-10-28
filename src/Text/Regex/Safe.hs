@@ -43,7 +43,7 @@ regexStr re = case re of
   Str s -> "(" <> s <> ")"
   Alt ra rb -> "((" <> regexStr ra <> ")|(" <> regexStr rb <> "))"
   Opt ra -> "(" <> regexStr ra <> ")?"
-  App ra rb -> "(" <> regexStr ra <> ")" <> "(" <> regexStr rb <> ")"
+  App ra rb -> regexStr ra <> regexStr rb
   Rep ra -> "((" <> regexStr ra <> ")*)"
   Map _ ra -> regexStr ra
 
@@ -86,8 +86,8 @@ compileRE pc pe r str = -- trace str $
     getContent i r ms = case r of
       Eps -> (i, ())
       App ra rb ->
-        let (i', retA) = getContent (i+1) ra ms
-            (i'', retB) = getContent (i'+1) rb ms in
+        let (i', retA) = getContent i ra ms
+            (i'', retB) = getContent i' rb ms in
           (i'', retA retB)
       Str _ -> (i+1, fst (ms ! i))
       Map f r ->
@@ -131,7 +131,7 @@ nGroups re = case re of
   Str _ -> 1
   Alt r1 r2 -> 3 + nGroups r1 + nGroups r2
   Opt r -> nGroups r + 1
-  App r1 r2 -> 2 + nGroups r1 + nGroups r2
+  App r1 r2 -> nGroups r1 + nGroups r2
   Rep r -> nGroups r + 2
   Map _ r -> nGroups r
 
