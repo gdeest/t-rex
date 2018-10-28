@@ -80,6 +80,7 @@ instance RegexBackend [Char] where
 instance RegexBackend BS.ByteString where
   compile = compileRE (Proxy @BS.CompOption) (Proxy @BS.ExecOption)
 
+
 compileRE :: forall compOpts execOpts s re x.
   ( IsString s
   , Monoid s
@@ -93,14 +94,14 @@ compileRE :: forall compOpts execOpts s re x.
   RE s x -> CompiledRE s x
 compileRE pc pe r str = -- trace str $
     let re = makeRegex $ mkFullRegex r :: re
-        result = (\(_, ms, _) -> ms) <$> matchOnceText re str
+        result = matchOnce re str
     in
       snd . getContent 1 r <$> result
   where
     getContent
       :: forall r. Int -- Num of capture groups before / next group
       -> RE s r
-      -> MatchText s
+      -> MatchArray
       -> (Int, r)
     getContent i r ms = case r of
       Eps -> (i, ())
@@ -108,17 +109,17 @@ compileRE pc pe r str = -- trace str $
         let (i', retA) = getContent i ra ms
             (i'', retB) = getContent i' rb ms in
           (i'', retA retB)
-      Raw _ -> (i+1, fst (ms ! i))
+      Raw _ -> (i+1, extract (ms ! i) str)
       Map f r ->
         let (i', ret) = getContent i r ms in (i', f ret)
       Opt r ->
-        let (matchedStr, _) = ms ! i in
+        let matchedStr = extract (ms ! i) str in
           case matchedStr of
             "" -> (i+1+nGroups r, Nothing)
             _ -> Just <$> getContent (i+1) r ms
       Alt ra rb ->
-        let (matched1, _) = ms ! (i+2)
-            (matched2, _) = ms ! (i+ng1+3)
+        let matched1 = extract (ms ! (i+2)) str
+            matched2 = extract (ms ! (i+ng1+3)) str
             (_, content1) = getContent (i+2) ra ms
             (_, content2) = getContent (i+3+ng1) rb ms
             (ng1, ng2) = (nGroups ra, nGroups rb) in
@@ -130,7 +131,7 @@ compileRE pc pe r str = -- trace str $
       Rep r ->
         let r' = r <&> (Rep r)
             ng = nGroups r + 2
-            (matchedStr, _) = ms ! i in
+            matchedStr = extract (ms ! i) str in
         case matchedStr of
           "" -> (i+ng, [])
           s ->
