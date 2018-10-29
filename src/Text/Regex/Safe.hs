@@ -17,6 +17,7 @@ module Text.Regex.Safe
   , many1
   , opt
   , raw
+  , str
   ) where
 
 import Data.Array (Array, (!))
@@ -34,13 +35,13 @@ data RE s r where
   Eps :: RE s ()
   Map :: (a -> b) -> RE s a -> RE s b
   App :: RE s (a -> b) -> RE s a -> RE s b
-  Raw :: s -> RE s s
+  Raw :: Int -> s -> RE s s
   Alt :: RE s a -> RE s b -> RE s (Either a b)
   Opt :: RE s a -> RE s (Maybe a)
   Rep :: RE s a -> RE s [a]
 
 instance IsString s => IsString (RE s s) where
-  fromString = Raw . fromString
+  fromString = str
 
 instance Functor (RE s) where
   fmap = Map
@@ -57,7 +58,7 @@ instance Alt (RE s) where
 regexStr :: (IsString s, Monoid s) => RE s r -> s
 regexStr re = case re of
   Eps -> mempty
-  Raw s -> "(" <> s <> ")"
+  Raw _ s -> "(" <> s <> ")"
   -- The enclosing group could be made non-capturing. Unfortunately, this isn't
   -- supported by regex-tdfa.
   Alt ra rb -> "((" <> regexStr ra <> ")|(" <> regexStr rb <> "))"
@@ -109,7 +110,7 @@ compileRE pc pe r str = -- trace str $
         let (i', retA) = getContent i ra ms
             (i'', retB) = getContent i' rb ms in
           (i'', retA retB)
-      Raw _ -> (i+1, extract (ms ! i) str)
+      Raw n _ -> (i+n+1, extract (ms ! i) str)
       Map f r ->
         let (i', ret) = getContent i r ms in (i', f ret)
       Opt r ->
@@ -148,7 +149,7 @@ compileRE pc pe r str = -- trace str $
 nGroups :: RE s x -> Int
 nGroups re = case re of
   Eps -> 0
-  Raw _ -> 1
+  Raw n _ -> n+1
   Alt r1 r2 -> 3 + nGroups r1 + nGroups r2
   Opt r -> nGroups r + 1
   App r1 r2 -> nGroups r1 + nGroups r2
@@ -156,7 +157,7 @@ nGroups re = case re of
   Map _ r -> nGroups r
 
 int :: RE String Int
-int = Map (read @Int) (Raw "-?[0-9]+")
+int = Map (read @Int) (raw 0 "-?[0-9]+")
 
 infixl <&>
 (<&>) :: RE s a -> RE s b -> RE s (a, b)
@@ -176,6 +177,40 @@ sepBy ra rs = (:) <$> ra <*> many (rs *> ra)
 opt :: RE s a -> RE s (Maybe a)
 opt = Opt
 
-raw :: s -> RE s s
+str :: IsString s => String -> RE s s
+str = raw 0 . fromString . escapeREString
+
+-- | Use a raw regular expression to return a string. The 'Int' parameter
+-- indicates how many groups are contained within the underlying regexp.
+raw :: Int -> s -> RE s s
 raw = Raw
 
+-- The following functions are taken straight from regex-1.0.1.3 internals. A
+-- dependence on the whole package does not seem justified, here.
+
+-- Convert a string into a regular expression that will match that
+-- string
+escapeREString :: String -> String
+escapeREString = foldr esc []
+  where
+    esc c t | isMetaChar c = '\\' : c : t
+            | otherwise    = c : t
+
+-- returns True iff the charactr is an RE meta character ('[', '*', '{', etc.)
+isMetaChar :: Char -> Bool
+isMetaChar c = case c of
+  '^'  -> True
+  '\\' -> True
+  '.'  -> True
+  '|'  -> True
+  '*'  -> True
+  '?'  -> True
+  '+'  -> True
+  '('  -> True
+  ')'  -> True
+  '['  -> True
+  ']'  -> True
+  '{'  -> True
+  '}'  -> True
+  '$'  -> True
+  _    -> False
