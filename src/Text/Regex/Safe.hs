@@ -74,8 +74,6 @@ regexStr re = case re of
 mkFullRegex :: (IsString s, Monoid s) => RE s r -> s
 mkFullRegex re = "^" <> regexStr re <> "$"
 
--- type CompiledRE s x = s -> Maybe x
-
 class RegexBackend s where
   type Compiled s :: * -> *
 
@@ -93,6 +91,87 @@ instance RegexBackend BS.ByteString where
   type Compiled BS.ByteString = CompiledRE BS.ByteString
   compile = coerce $ compileRE (Proxy @BS.CompOption) (Proxy @BS.ExecOption)
   match = coerce
+
+data MatchTree re s x where
+  MatchEps :: MatchTree re s ()
+  MatchRaw :: Int -> MatchTree re s s
+  MatchApp
+    :: MatchTree re s (a -> b)
+    -> MatchTree re s a
+    -> MatchTree re s b
+  MatchMap
+    :: (a -> b) -> MatchTree re s a -> MatchTree re s b
+  MatchOpt :: Int -> MatchTree re s a -> MatchTree re s (Maybe a)
+  MatchAlt ::
+    (Int, MatchTree re s a) ->
+    (Int, MatchTree re s b) ->
+    MatchTree re s (Either a b)
+  MatchRep ::
+    re ->
+    Int ->
+    MatchTree re s (a, [a]) ->
+    MatchTree re s [a]
+
+matchRE :: forall compOpts execOpts s re x.
+  ( IsString s
+  , Monoid s
+  , Show s
+  , Eq s
+  , RegexMaker re compOpts execOpts s
+  , RegexLike re s
+  ) =>
+  (re, MatchTree re s x) ->
+  s ->
+  Maybe x
+matchRE (re, tree) str = extractResult str tree <$> matchOnce re str
+
+extractResult :: forall re s x.
+  ( RegexLike re s
+  , IsString s
+  , Eq s
+  ) =>
+  s ->
+  MatchTree re s x ->
+  MatchArray
+  -> x
+extractResult str tree matchArray =
+  let peek :: forall y. MatchTree re s y -> y
+      peek tree' = extractResult str tree' matchArray in
+  case tree of
+    MatchEps -> ()
+    MatchRaw i -> extract (matchArray ! i) str
+    MatchApp tf ta -> peek tf $ peek ta
+    MatchMap f ta -> f $ peek ta
+    MatchOpt i ta ->
+      -- XXX: May trigger double lookup of (matchArray ! i).
+      -- Can we do better ?
+      case extract (matchArray ! i) str of
+        "" -> Nothing
+        _ -> Just $ peek ta
+    MatchAlt (i, ta) (_, tb) ->
+      case extract (matchArray ! i) str of
+        "" -> Left $ peek ta
+        _ -> Right $ peek tb
+    MatchRep re i ta ->
+      case extract (matchArray ! i) str of
+        "" -> []
+        s -> uncurry (:) $
+          case matchOnce re s of
+            Nothing -> error "Invariant violation."
+            Just ma -> extractResult s ta ma
+
+compileRE' :: forall compOpts execOpts s re x.
+  ( IsString s
+  , Monoid s
+  , Show s
+  , Eq s
+  , RegexMaker re compOpts execOpts s
+  , RegexLike re s
+  ) =>
+  Proxy compOpts ->
+  Proxy execOpts ->
+  RE s x -> (re, MatchTree re s x)
+compileRE' = undefined
 
 
 compileRE :: forall compOpts execOpts s re x.
