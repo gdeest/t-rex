@@ -171,7 +171,31 @@ compileRE' :: forall compOpts execOpts s re x.
   Proxy compOpts ->
   Proxy execOpts ->
   RE s x -> (re, MatchTree re s x)
-compileRE' = undefined
+compileRE' pc pe r =
+    ( makeRegex $ mkFullRegex r :: re
+    , snd $ buildTree 1 r
+    )
+  where
+    buildTree :: forall y. Int ->  RE s y -> (Int, MatchTree re s y)
+    buildTree i r = case r of
+      Eps -> (i, MatchEps)
+      App ra rb ->
+        let (i1, ta) = buildTree i ra
+            (i2, tb) = buildTree i1 rb
+        in (i2, MatchApp ta tb)
+      Raw n _ -> (i+n+1, MatchRaw i)
+      Opt rOpt ->
+        let (i', t) = buildTree (i+1) rOpt
+        in (i', MatchOpt i t)
+      Alt ra rb ->
+        let (i1, ta) = buildTree (i+2) ra
+            (i2, tb) = buildTree (i1+1) rb
+        in (i2, MatchAlt (i+2, ta) (i2+1, tb))
+      Rep rRep ->
+        let r' = rRep <&> Rep rRep
+            compiled = makeRegex $ mkFullRegex r' :: re
+            (i', t) = buildTree 1 r'
+        in (i+i'-1, MatchRep compiled i t)
 
 
 compileRE :: forall compOpts execOpts s re x.
