@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Text.Regex.Safe
   ( RegexBackend(..)
@@ -21,6 +22,7 @@ module Text.Regex.Safe
   ) where
 
 import Data.Array (Array, (!))
+import Data.Coerce (coerce)
 import Data.Functor.Alt
 import Data.Maybe(fromJust)
 import Data.Proxy (Proxy(..))
@@ -31,6 +33,8 @@ import qualified Text.Regex.TDFA.String as Str
 import qualified Data.ByteString as BS
 import qualified Text.Regex.TDFA.ByteString as BS
 
+-- | 'RE s r' represents a regular expression that parses strings of type 's'
+-- and returns a result of type 'r'. It is abstract.
 data RE s r where
   Eps :: RE s ()
   Map :: (a -> b) -> RE s a -> RE s b
@@ -70,16 +74,25 @@ regexStr re = case re of
 mkFullRegex :: (IsString s, Monoid s) => RE s r -> s
 mkFullRegex re = "^" <> regexStr re <> "$"
 
-type CompiledRE s x = s -> Maybe x
+-- type CompiledRE s x = s -> Maybe x
 
 class RegexBackend s where
+  type Compiled s :: * -> *
+
   compile :: RE s x -> CompiledRE s x
+  match :: CompiledRE s x -> s -> Maybe x
+
+newtype CompiledRE s x = CompiledRE { apply :: s -> Maybe x }
 
 instance RegexBackend [Char] where
-  compile = compileRE (Proxy @Str.CompOption) (Proxy @Str.ExecOption)
+  type Compiled [Char] = CompiledRE [Char]
+  compile = coerce $ compileRE (Proxy @Str.CompOption) (Proxy @Str.ExecOption)
+  match = coerce
 
 instance RegexBackend BS.ByteString where
-  compile = compileRE (Proxy @BS.CompOption) (Proxy @BS.ExecOption)
+  type Compiled BS.ByteString = CompiledRE BS.ByteString
+  compile = coerce $ compileRE (Proxy @BS.CompOption) (Proxy @BS.ExecOption)
+  match = coerce
 
 
 compileRE :: forall compOpts execOpts s re x.
@@ -92,8 +105,8 @@ compileRE :: forall compOpts execOpts s re x.
   ) =>
   Proxy compOpts ->
   Proxy execOpts ->
-  RE s x -> CompiledRE s x
-compileRE pc pe r str = -- trace str $
+  RE s x -> (s -> Maybe x)
+compileRE pc pe r str =
     let re = makeRegex $ mkFullRegex r :: re
         result = matchOnce re str
     in
@@ -133,18 +146,18 @@ compileRE pc pe r str = -- trace str $
         let r' = r <&> (Rep r)
             ng = nGroups r + 2
             matchedStr = extract (ms ! i) str in
-        case matchedStr of
-          "" -> (i+ng, [])
-          s ->
-            -- Invariant: this is necessarily a match.
-            let (x, xs) =
-                  case compileRE pc pe r' s of
-                    Just ret -> ret
-                    Nothing ->
-                      error $ "Invariant violation: can't parse " <>
-                        show matchedStr <> " with: " <> show (regexStr r')
-            in
-              (i+ng, x:xs)
+        ( i+ng
+        , case matchedStr of
+            "" -> []
+            s ->
+              uncurry (:) $
+                -- Invariant: this is necessarily a match.
+                case compileRE pc pe r' s of
+                  Just ret -> ret
+                  Nothing ->
+                    error $ "Invariant violation: can't parse " <>
+                    show matchedStr <> " with: " <> show (regexStr r')
+        )
 
 nGroups :: RE s x -> Int
 nGroups re = case re of
