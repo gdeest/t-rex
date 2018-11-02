@@ -2,40 +2,44 @@
 import Test.Hspec
 
 import Text.Regex.Safe
+import Data.ByteString (ByteString)
 
 main :: IO ()
 main = hspec $ do
   it "returns Nothing on failure" $ do
-    let re = "b" :: RE String String
+    let re = "b" :: RE ByteString ByteString
         ce = compile re
     match ce "a" `shouldBe` Nothing
 
   it "captures optional patterns as Maybes" $ do
-    let re = opt "a" :: RE String (Maybe String)
+    let re = opt "a" :: RE ByteString (Maybe ByteString)
         ce = compile re
     match ce "a" `shouldBe` Just (Just "a")
     match ce "" `shouldBe` Just Nothing
 
   it "captures alternative patterns as Either" $ do
     let re = str "a" </> str "b"
-               :: RE String (Either String String)
+               :: RE ByteString (Either ByteString ByteString)
         ce = compile re
     match ce "a" `shouldBe` Just (Left "a")
     match ce "b" `shouldBe` Just (Right "b")
 
   it "captures sequences as pairs" $ do
-    let re = "a" <&> "b" :: RE String (String, String)
+    let re = "a" <&> ("b" <&> "c") :: RE ByteString (ByteString, (ByteString,ByteString))
         ce = compile re
-    match ce "ab" `shouldBe` Just ("a", "b")
+    match ce "abc" `shouldBe` Just ("a", ("b", "c"))
 
   it "captures repetitions as lists" $ do
-    let re = many "a" :: RE String [String]
+    let re = many "a" :: RE ByteString [ByteString]
         ce = compile re
     match ce "aaaa" `shouldBe` Just ["a", "a", "a", "a"]
+    let re' = many ("a" <&> "b") :: RE ByteString [(ByteString, ByteString)]
+        ce' = compile re'
+    match ce' "abababab" `shouldBe` Just [("a","b"), ("a", "b"), ("a", "b"), ("a", "b")]
 
   it "gracefully handles nested patterns" $ do
-    let re = many ("a" <&> opt "b") </> "c"
-               :: RE String (Either [(String, Maybe String)] String)
+    let re = many ("a" <&> opt "b") </> str "c"
+               :: RE ByteString (Either [(ByteString, Maybe ByteString)] ByteString)
         ce = compile re
         ab = ("a", Just "b")
         a = ("a", Nothing)
@@ -43,15 +47,15 @@ main = hspec $ do
     match ce "c" `shouldBe` Just (Right "c")
 
   it "discards prefixes with *>" $ do
-    let re = many (str "a") *> many (str "v") :: RE String [String]
+    let re = many (str "a") *> many (str "v") :: RE ByteString [ByteString]
         ce = compile re
-        re' = str "aaaa" *> fmap id (raw 0 "v+") :: RE String String
+        re' = str "aaaa" *> fmap id (raw 0 "v+") :: RE ByteString ByteString
         ce' = compile re'
     match ce "aaaavvvv" `shouldBe` Just ["v", "v", "v", "v"]
     match ce' "aaaavvvv" `shouldBe` Just "vvvv"
 
   it "parses separated lists" $ do
-    let re = str "a" `sepBy` str "," :: RE String [String]
+    let re = str "a" `sepBy` str "," :: RE ByteString [ByteString]
         re' = str "c" <&> re
         ce = compile re
         ce' = compile re'
@@ -59,13 +63,13 @@ main = hspec $ do
     match ce' "ca,a,a,a" `shouldBe` Just ("c", ["a", "a", "a", "a"])
 
   it "parses integers" $ do
-    let ce = compile int
+    let ce = compile int :: CompiledRE ByteString Int
     match ce "-123" `shouldBe` Just (-123)
     match ce "567" `shouldBe` Just 567
     match ce "5aa" `shouldBe` Nothing
 
   it "parses separated lists" $ do
-    let ce = compile (int `sepBy` str ",")
+    let ce = compile (int `sepBy` str ",") :: CompiledRE ByteString [Int]
     match ce "-123" `shouldBe` Just [-123]
     match ce "567" `shouldBe` Just [567]
     match ce "567,123" `shouldBe` Just [567,123]
@@ -73,7 +77,7 @@ main = hspec $ do
     match ce "5aa" `shouldBe` Nothing
 
   it "computes sums" $ do
-    let re :: RE String Int
+    let re :: RE ByteString Int
         re =
           fmap sum $
           str "Compute the sum of: " *> int `sepBy` str ","
