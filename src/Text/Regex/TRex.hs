@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -10,7 +9,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Text.Regex.Safe
+module Text.Regex.TRex
   ( RegexBackend(..)
   , CompiledRE
   , RE
@@ -22,10 +21,6 @@ module Text.Regex.Safe
   , opt
   , raw
   , str
-  , module Text.Regex.Base
-  , compileRE'
-  , MatchTree
-  , extractResult
   ) where
 
 import Data.Array ((!))

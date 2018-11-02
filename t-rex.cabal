@@ -1,8 +1,8 @@
-name:                regex-safe
+name:                t-rex
 version:             0.1.0.0
 synopsis:            Typed regular expressions based on regex-tdfa
 -- description:
-homepage:            https://github.com/gdeest/regex-safe#readme
+homepage:            https://github.com/gdeest/t-rex#readme
 license:             BSD3
 license-file:        LICENSE
 author:              Gaël Deest
@@ -17,7 +17,7 @@ library
   ghc-options:         -O -Wall -Werror -fwarn-incomplete-patterns -fwarn-incomplete-uni-patterns
 
   hs-source-dirs:      src
-  exposed-modules:     Text.Regex.Safe
+  exposed-modules:     Text.Regex.TRex
   build-depends:       base >= 4.7 && < 5
                      , array
                      , bytestring
@@ -33,10 +33,10 @@ test-suite test
   main-is:             Main.hs
   build-depends:       base >= 4.7 && < 5
                      , bytestring
-                     , regex-safe
+                     , t-rex
                      , hspec
   default-language:    Haskell2010
 
 source-repository head
   type:     git
-  location: https://github.com/gdeest/regex-safe
+  location: https://github.com/gdeest/t-rex

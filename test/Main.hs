@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 import Test.Hspec
 
-import Text.Regex.Safe
+import Text.Regex.TRex
 import Data.ByteString (ByteString)
 
 main :: IO ()
