@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -20,7 +21,7 @@ module Text.Regex.Safe
   , opt
   , raw
   , str
-  , module Text.Regex.Base 
+  , module Text.Regex.Base
   , compileRE'
   , MatchTree
   , extractResult
@@ -126,7 +127,8 @@ data MatchTree re s x where
   MatchRep ::
     !re ->
     !Int ->
-    MatchTree re s (a, [a]) ->
+    !Int ->
+    MatchTree re s a ->
     MatchTree re s [a]
 
 matchRE :: forall compOpts execOpts s re x.
@@ -171,13 +173,15 @@ extractResult s tree matchArray =
       case extract (matchArray ! i) s of
         "" -> Right $ peek tb
         _ -> Left $ peek ta
-    MatchRep re i ta ->
-      case extract (matchArray ! i) s of
-        "" -> []
-        s' -> uncurry (:) $
+    MatchRep re i j ta -> extractRep re j ta (extract (matchArray ! i) s)
+
+  where extractRep _ _ _ "" = []
+        extractRep re j ta s' =
           case matchOnce re s' of
             Nothing -> error "Invariant violation."
-            Just ma -> extractResult s' ta ma
+            Just ma ->
+              extractResult s' ta ma :
+              extractRep re j ta (extract (ma ! j) s')
 
 compileRE' :: forall compOpts execOpts s re x.
   ( IsString s
@@ -220,18 +224,8 @@ compileRE' _ _ r =
             -- XXX: This is a recipe for memory leakage. As the compiled regex
             -- is repeatedly evaluated, we will build a MatchTree of depth
             -- proportional to the longest repetition of that pattern.
-            (_, t) = buildTree 1 r1
-        in (i+nGroups rRep+2, MatchRep compiled i t)
-
-nGroups :: RE s x -> Int
-nGroups re = case re of
-  Eps -> 0
-  Raw n _ -> n+1
-  Alt r1 r2 -> 3 + nGroups r1 + nGroups r2
-  Opt r -> nGroups r + 1
-  App r1 r2 -> nGroups r1 + nGroups r2
-  Rep r -> nGroups r + 2
-  Map _ r -> nGroups r
+            (j, t) = buildTree 1 rRep
+        in (i+j+1, MatchRep compiled i j t)
 
 int :: forall s. (IsString s, ToString s) => RE s Int
 int = Map (read @Int . toString @s) (raw 0 "-?[0-9]+")
