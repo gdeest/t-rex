@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Strict #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -114,20 +115,20 @@ data MatchTree re s x where
   MatchEps :: MatchTree re s ()
   MatchRaw :: !Int -> MatchTree re s s
   MatchApp
-    :: !(MatchTree re s (a -> b))
-    -> !(MatchTree re s a)
+    :: MatchTree re s (a -> b)
+    -> MatchTree re s a
     -> MatchTree re s b
   MatchMap
-    :: !(a -> b) -> !(MatchTree re s a) -> MatchTree re s b
-  MatchOpt :: !Int -> !(MatchTree re s a) -> MatchTree re s (Maybe a)
+    :: (a -> b) -> MatchTree re s a -> MatchTree re s b
+  MatchOpt :: Int -> MatchTree re s a -> MatchTree re s (Maybe a)
   MatchAlt ::
-    !(Int, MatchTree re s a) ->
-    !(Int, MatchTree re s b) ->
+    (Int, MatchTree re s a) ->
+    (Int, MatchTree re s b) ->
     MatchTree re s (Either a b)
   MatchRep ::
-    !re ->
-    !Int ->
-    !Int ->
+    re ->
+    Int ->
+    Int ->
     MatchTree re s a ->
     MatchTree re s [a]
 
@@ -221,9 +222,6 @@ compileRE' _ _ r =
       Rep rRep ->
         let r1 = rRep <&> Rep rRep
             compiled = makeRegex $ mkFullRegex r1 :: re
-            -- XXX: This is a recipe for memory leakage. As the compiled regex
-            -- is repeatedly evaluated, we will build a MatchTree of depth
-            -- proportional to the longest repetition of that pattern.
             (j, t) = buildTree 1 rRep
         in (i+j+1, MatchRep compiled i j t)
 
