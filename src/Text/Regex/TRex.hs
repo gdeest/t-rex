@@ -46,7 +46,8 @@ import qualified Data.ByteString as B8
 import qualified Data.ByteString as BS
 import qualified Text.Regex.PCRE.ByteString as BS
 
-import Language.Inline.Rust
+-- import Language.Inline.Rust
+import Language.Rust.Inline
 
 extendContext basic
 
