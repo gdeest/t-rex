@@ -63,13 +63,14 @@ main = hspec $ do
     match ce' "ca,a,a,a" `shouldBe` Just ("c", ["a", "a", "a", "a"])
 
   it "parses integers" $ do
-    let ce = compile int :: CompiledRE ByteString Int
+    let re = int :: RE ByteString Int
+        ce = compile re :: Compiled ByteString Int
     match ce "-123" `shouldBe` Just (-123)
     match ce "567" `shouldBe` Just 567
     match ce "5aa" `shouldBe` Nothing
 
   it "parses separated lists" $ do
-    let ce = compile (int `sepBy` str ",") :: CompiledRE ByteString [Int]
+    let ce = compile (int `sepBy` str ",") :: Compiled ByteString [Int]
     match ce "-123" `shouldBe` Just [-123]
     match ce "567" `shouldBe` Just [567]
     match ce "567,123" `shouldBe` Just [567,123]
@@ -79,7 +80,13 @@ main = hspec $ do
   it "computes sums" $ do
     let re :: RE ByteString Int
         re =
-          fmap sum $
-          str "Compute the sum of: " *> int `sepBy` str ","
+          sum <$> (str "Compute the sum of: " *> int `sepBy` str ",")
         ce = compile re
     match ce "Compute the sum of: 1,-123,58" `shouldBe` Just (-64)
+
+  it "parses multiline strings" $ do
+    let re :: RE ByteString (Int, Int)
+        re = (,) <$> (int <* eol) <*> int
+        ce = compile re
+
+    match ce "123\n-123" `shouldBe` Just (123, -123)

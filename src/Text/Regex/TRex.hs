@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -6,34 +7,58 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Strict #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Text.Regex.TRex
   ( RegexBackend(..)
-  , CompiledRE
   , RE
   , module Data.Functor.Alt
   , int
+  , decimalN
+  , decimalBS
   , (<&>), (</>)
   , sepBy
   , many1
   , opt
   , raw
+  , char
+  , eol
   , str
+  , myRustIO
   ) where
 
+import Control.Parallel
 import Data.Array ((!))
-import Data.Coerce (coerce)
+-- import Data.Coerce (coerce)
 import Data.Functor.Alt
-import Data.Proxy (Proxy(..))
+-- import Data.Proxy (Proxy(..))
+import Data.Semigroup ((<>))
 import Data.String(IsString(..))
 import Data.String.ToString
 import Text.Regex.Base hiding (match)
 
-import qualified Text.Regex.TDFA.String as Str
+import qualified Data.ByteString as B8
+
+-- import qualified Text.Regex.PCRE.String as Str
 import qualified Data.ByteString as BS
-import qualified Text.Regex.TDFA.ByteString as BS
+import qualified Text.Regex.PCRE.ByteString as BS
+
+import Language.Inline.Rust
+
+extendContext basic
+
+setCrateRoot []
+myRustIO = do
+  putStrLn "Haskell: Hello. Enter a number:"
+  x <- readLn
+  y <- [rustIO| i32 {
+    println!("Rust: Your number is {}", $(x: i32));
+    $(x: i32) + 1
+  } |]
+  putStrLn $ "Haskell: Rust says number plus 1 is " ++ show y
 
 -- | 'RE s r' represents a regular expression that parses strings of type 's'
 -- and returns a result of type 'r'. It is abstract.
@@ -65,46 +90,48 @@ regexStr :: (IsString s, Monoid s) => RE s r -> s
 regexStr re = case re of
   Eps -> mempty
   Raw _ s -> "(" <> s <> ")"
-  -- XXX: The enclosing group could be made non-capturing. Unfortunately, this
-  -- isn't supported by regex-tdfa.
-  -- Does it warrant a switch to regex-pcre ?
-  Alt ra rb -> "((" <> regexStr ra <> ")|(" <> regexStr rb <> "))"
+  Alt ra rb -> "(?:(" <> regexStr ra <> ")|(" <> regexStr rb <> "))"
   Opt ra -> "(" <> regexStr ra <> ")?"
   App ra rb -> regexStr ra <> regexStr rb
-  Rep ra -> "((" <> regexStr ra <> ")*)"
+  Rep ra -> "((?:" <> regexStr ra <> ")*)"
   Map _ ra -> regexStr ra
 
-mkFullRegex :: (IsString s, Monoid s) => RE s r -> s
-mkFullRegex re = "^" <> regexStr re <> "$"
+mkFullRegex :: (IsString s, Show s, Monoid s) => RE s r -> s
+mkFullRegex re = "\\A" <> regexStr re <> "\\Z"
 
 class RegexBackend s where
-  type Compiled s :: * -> *
+  data Compiled s :: * -> *
 
-  compile :: RE s x -> CompiledRE s x
-  match :: CompiledRE s x -> s -> Maybe x
+  compile :: RE s x -> Compiled s x
+  match :: Compiled s x -> s -> Maybe x
+  isMatch :: Compiled s x -> s -> Bool
+  matchAll :: Compiled s x -> s -> [x]
+    
+-- newtype CompiledRE s x = CompiledRE (s -> Maybe x)
+-- newtype CompiledRE re s x = CompiledRE (re, re, MatchTree re s x)
 
-newtype CompiledRE s x = CompiledRE (s -> Maybe x)
+-- instance RegexBackend [Char] where
+--   type Compiled [Char] = CompiledRE [Char]
 
+--   compile re =
+--     let ce = compileRE (Proxy @Str.CompOption) (Proxy @Str.ExecOption) re
+--     in CompiledRE $ matchRE ce
 
-instance RegexBackend [Char] where
-  type Compiled [Char] = CompiledRE [Char]
-  compile re =
-    let ce =
-          compileRE'(Proxy @Str.CompOption) (Proxy @Str.ExecOption) re
-    in
-      CompiledRE $ matchRE ce
+--   match = coerce
 
-  match = coerce
 
 instance RegexBackend BS.ByteString where
-  type Compiled BS.ByteString = CompiledRE BS.ByteString
-  compile re =
-    let ce =
-          compileRE'(Proxy @BS.CompOption) (Proxy @BS.ExecOption) re
-    in
-      CompiledRE $ matchRE ce
+  data Compiled BS.ByteString x = CompiledRegBS (BS.Regex, BS.Regex, MatchTree BS.Regex BS.ByteString x)
 
-  match = coerce
+  compile re =
+    let tuple@(!_, !_, !_) = compileRE (BS.compMultiline + BS.compAnchored) (BS.execAnchored) re in
+      CompiledRegBS tuple
+      
+
+  match (CompiledRegBS (_, reFull, mt)) = matchRE (reFull, mt)
+  matchAll (CompiledRegBS (reFront, _, mt)) = matchREAll (reFront, mt)
+
+  isMatch (CompiledRegBS (_, reFull, _)) = matchTest reFull
 
 data MatchTree re s x where
   MatchEps :: MatchTree re s ()
@@ -128,10 +155,8 @@ data MatchTree re s x where
     MatchTree re s [a]
 
 matchRE :: forall compOpts execOpts s re x.
-  ( IsString s
-  , Monoid s
-  , Show s
-  , Eq s
+  ( IsString s, Monoid s
+  , Show s, Eq s
   , RegexMaker re compOpts execOpts s
   , RegexLike re s
   ) =>
@@ -140,11 +165,24 @@ matchRE :: forall compOpts execOpts s re x.
   Maybe x
 matchRE (re, tree) s = extractResult s tree <$> matchOnce re s
 
+{-# INLINE matchREAll #-}
+{-# SPECIALIZE matchREAll :: (BS.Regex, MatchTree BS.Regex BS.ByteString x) -> BS.ByteString -> [x] #-}
+matchREAll :: forall compOpts execOpts s re x.
+  ( IsString s, Monoid s
+  , Show s, Eq s
+  , RegexMaker re compOpts execOpts s
+  , RegexLike re s
+  ) =>
+  (re, MatchTree re s x) ->
+  s ->
+  [x]
+matchREAll (re, tree) s = map (extractResult s tree) $ Text.Regex.Base.matchAll re s
+
+{-# INLINE extractResult #-}
+{-# SPECIALIZE extractResult :: BS.ByteString -> MatchTree BS.Regex BS.ByteString x -> MatchArray -> x #-}
 extractResult :: forall re s x.
-  ( RegexLike re s
-  , IsString s
-  , Show s
-  , Eq s
+  ( IsString s, Show s, Eq s
+  , RegexLike re s
   ) =>
   s ->
   MatchTree re s x ->
@@ -156,7 +194,12 @@ extractResult s tree matchArray =
   case tree of
     MatchEps -> ()
     MatchRaw i -> extract (matchArray ! i) s
-    MatchApp tf ta -> peek tf $ peek ta
+    MatchApp tf ta ->
+      let app = peek tf
+          arg = peek ta in
+      app `par` arg `pseq` app arg
+      -- peek tf $ peek ta
+      -- app arg
     MatchMap f ta -> f $ peek ta
     MatchOpt i ta ->
       -- XXX: May trigger double lookup of (matchArray ! i).
@@ -179,19 +222,18 @@ extractResult s tree matchArray =
               extractResult s' ta ma :
               extractRep re j ta (extract (ma ! j) s')
 
-compileRE' :: forall compOpts execOpts s re x.
-  ( IsString s
-  , Monoid s
-  , Show s
-  , Eq s
+compileRE :: forall compOpts execOpts s re x.
+  ( IsString s, Monoid s
+  , Show s, Eq s
   , RegexMaker re compOpts execOpts s
   , RegexLike re s
   ) =>
-  Proxy compOpts ->
-  Proxy execOpts ->
-  RE s x -> (re, MatchTree re s x)
-compileRE' _ _ r =
-    ( makeRegex $ mkFullRegex r :: re
+  compOpts ->
+  execOpts ->
+  RE s x -> (re, re, MatchTree re s x)
+compileRE copts execOpts r =
+    ( makeRegexOpts copts execOpts $ regexStr r :: re
+    , makeRegexOpts copts execOpts $  mkFullRegex r :: re
     , snd $ buildTree 1 r
     )
 
@@ -211,17 +253,27 @@ compileRE' _ _ r =
         let (i', t) = buildTree (i+1) rOpt
         in (i', MatchOpt i t)
       Alt ra rb ->
-        let (i1, ta) = buildTree (i+2) ra
+        let (i1, ta) = buildTree (i+1) ra
             (i2, tb) = buildTree (i1+1) rb
-        in (i2, MatchAlt (i+2, ta) (i2+1, tb))
+        in (i2, MatchAlt (i+1, ta) (i2+1, tb))
       Rep rRep ->
         let r1 = rRep <&> Rep rRep
             compiled = makeRegex $ mkFullRegex r1 :: re
             (j, t) = buildTree 1 rRep
-        in (i+j+1, MatchRep compiled i j t)
+        in (i+j, MatchRep compiled i j t)
+
 
 int :: forall s. (IsString s, ToString s) => RE s Int
 int = Map (read @Int . toString @s) (raw 0 "-?[0-9]+")
+
+decimalN :: forall n s. (Num n, Read n, IsString s, ToString s, Semigroup s) => Int -> RE s n
+decimalN n = Map
+  (read @n . toString @s)
+  (raw 0 $ "[0-9]{" <> fromString (show n) <> "}")
+
+decimalBS :: Num d => RE BS.ByteString d
+decimalBS = Map (B8.foldl' step 0) (raw 0 "[0-9]+")
+  where step a w = a * 10 + fromIntegral (w - 48)
 
 infixl <&>
 (<&>) :: RE s a -> RE s b -> RE s (a, b)
@@ -243,6 +295,12 @@ opt = Opt
 
 str :: IsString s => String -> RE s s
 str = raw 0 . fromString . escapeREString
+
+char :: IsString s => Char -> RE s s
+char = str . return 
+
+eol :: IsString s => RE s ()
+eol = (const ()) <$> raw 0 "\\n"
 
 -- | Use a raw regular expression to return a string. The 'Int' parameter
 -- indicates how many groups are contained within the underlying regexp.

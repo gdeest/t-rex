@@ -21,8 +21,10 @@ library
   build-depends:       base >= 4.7 && < 5
                      , array
                      , bytestring
+                     , inline-rust
                      , regex-base
-                     , regex-tdfa
+                     , regex-pcre
+                     , parallel
                      , semigroupoids
                      , tostring
   default-language:    Haskell2010
@@ -36,6 +38,23 @@ test-suite test
                      , t-rex
                      , hspec
   default-language:    Haskell2010
+
+benchmark bench
+  type: exitcode-stdio-1.0
+  ghc-options:         -O -fllvm -threaded -Wall -fwarn-incomplete-patterns -fwarn-incomplete-uni-patterns
+  hs-source-dirs:      bench
+  main-is:             Main.hs
+  other-modules:       Benchmarks.Log.Attoparsec
+                     , Benchmarks.Log.Common
+                     , Benchmarks.Log.TRex
+  build-depends:       base >= 4.7 && < 5
+                     , bytestring
+                     , criterion
+                     , deepseq
+                     , attoparsec
+                     , t-rex
+                     , time
+  ghc-options:       -threaded -O
 
 source-repository head
   type:     git
