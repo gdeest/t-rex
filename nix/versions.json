@@ -1,0 +1,16 @@
+{
+  "nixpkgs": {
+    "owner": "NixOS",
+    "repo": "nixpkgs-channels",
+    "branch": "nixos-18.09",
+    "rev": "c64951515b325d01c391b83ba0c710fb0d2383f8",
+    "sha256": "1qhwn0r408y1v7yr6n82lxg87slafnh5bjyrk7hrinibr5hl31ar"
+  },
+  "inline-rust": {
+    "owner": "harpocrates",
+    "repo": "inline-rust",
+    "branch": "master",
+    "rev": "5ecff8c92526000e5fc358a2dfede9b60ef59a1a",
+    "sha256": "1ni3bhlj2wv6i17lzihrfj2fqjh6k8ppicrqwmvk6r3r1cjc8gav"
+  }
+}
