@@ -14,14 +14,13 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
-  ghc-options:         -O -Wall -Werror -fwarn-incomplete-patterns -fwarn-incomplete-uni-patterns
+  ghc-options:         -O -fllvm -Wall -Werror -fwarn-incomplete-patterns -fwarn-incomplete-uni-patterns
 
   hs-source-dirs:      src
   exposed-modules:     Text.Regex.TRex
   build-depends:       base >= 4.7 && < 5
                      , array
                      , bytestring
-                     , inline-rust
                      , regex-base
                      , regex-pcre
                      , parallel

@@ -27,7 +27,6 @@ module Text.Regex.TRex
   , char
   , eol
   , str
-  , myRustIO
   ) where
 
 import Control.Parallel
@@ -45,21 +44,6 @@ import qualified Data.ByteString as B8
 -- import qualified Text.Regex.PCRE.String as Str
 import qualified Data.ByteString as BS
 import qualified Text.Regex.PCRE.ByteString as BS
-
--- import Language.Inline.Rust
-import Language.Rust.Inline
-
-extendContext basic
-
-setCrateRoot []
-myRustIO = do
-  putStrLn "Haskell: Hello. Enter a number:"
-  x <- readLn
-  y <- [rustIO| i32 {
-    println!("Rust: Your number is {}", $(x: i32));
-    $(x: i32) + 1
-  } |]
-  putStrLn $ "Haskell: Rust says number plus 1 is " ++ show y
 
 -- | 'RE s r' represents a regular expression that parses strings of type 's'
 -- and returns a result of type 'r'. It is abstract.
