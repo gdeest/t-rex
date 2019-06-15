@@ -31,9 +31,9 @@ import Data.String(IsString(..))
 import Data.String.ToString
 import Text.Regex.Base hiding (match)
 
-import qualified Text.Regex.TDFA.String as Str
+import qualified Text.Regex.PCRE.String as Str
 import qualified Data.ByteString as BS
-import qualified Text.Regex.TDFA.ByteString as BS
+import qualified Text.Regex.PCRE.ByteString as BS
 
 -- | 'RE s r' represents a regular expression that parses strings of type 's'
 -- and returns a result of type 'r'. It is abstract.
